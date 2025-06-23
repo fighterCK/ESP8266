@@ -138,7 +138,7 @@ static void UART2_ParseReceivedData(uint8_t* data, uint16_t length)
         // 尝试将消息放入队列（非阻塞）
         if(osMessageQueuePut(uart2QueueHandle, &uart_msg, 0, 0) == osOK)
         {
-
+            //HAL_UART_Transmit(&huart1, "osMessageQueuePut error\r\n", sizeof("osMessageQueuePut error\r\n"), 100);
         }
     }
 
@@ -164,7 +164,7 @@ HAL_StatusTypeDef UART2_WaitForResponse(const char* expected_response, uint32_t 
         // 尝试从队列获取消息
         if(osMessageQueueGet(uart2QueueHandle, &uart_msg, NULL, 100) == osOK)
         {
-            HAL_UART_Transmit(&huart1, uart_msg.data, sizeof(uart_msg.data), 100);
+            //HAL_UART_Transmit(&huart1, uart_msg.data, sizeof(uart_msg.data), 100);
             // 检查是否包含期望的响应
             if(strstr(uart_msg.data, expected_response) != NULL)
             {
@@ -190,7 +190,7 @@ void UART2_ProcessDMAData(void)
     while(osMessageQueueGet(uart2QueueHandle, &uart_msg, NULL, 0) == osOK)
     {
         // 处理接收到的数据
-        printf("Received: %s (Length: %d)\n", uart_msg.data, uart_msg.length);
+        //printf("Received: %s (Length: %d)\n", uart_msg.data, uart_msg.length);
 
         // 可以在这里添加更多的数据处理逻辑
         // 例如：MQTT消息处理、AT命令响应等

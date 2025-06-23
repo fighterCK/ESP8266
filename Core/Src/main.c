@@ -58,7 +58,7 @@ int main(void)
 
     /* Initialize tasks */
     Tasks_Init();
-    vTaskMonitorInit();
+    //vTaskMonitorInit();
     /* Start scheduler */
     osKernelStart();
 

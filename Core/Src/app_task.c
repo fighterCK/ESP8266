@@ -35,7 +35,7 @@ void KeepAliveTimer_Callback(void *argument);
 void Tasks_Init(void)
 {
     /* Create queues */
-    uart2QueueHandle = osMessageQueueNew(16, sizeof(UartMessage_t), NULL);
+    uart2QueueHandle = osMessageQueueNew(8, sizeof(UartMessage_t), NULL);
     mqttQueueHandle = osMessageQueueNew(8, sizeof(MQTT_Message_t), NULL);
 
     /* Create mutex */
@@ -61,7 +61,7 @@ void Tasks_Init(void)
 
     const osThreadAttr_t MQTTPublishTask_attributes = {
             .name = "MQTTPublishTask",
-            .stack_size = 256 * 4,
+            .stack_size = 288 * 4,
             .priority = (osPriority_t) osPriorityNormal,
     };
     MQTTPublishTaskHandle = osThreadNew(StartMQTTPublishTask, NULL, &MQTTPublishTask_attributes);
