@@ -5,8 +5,10 @@ tasks.c - FreeRTOS任务实现文件
 */
 #include "app_task.h"
 #include "esp8266.h"
-#include "mqtt_client.h"
+#include "mqtt.h"
 #include "uart.h"
+#include "mqtt.h"
+#include "config.h"
 
 /* Private variables ---------------------------------------------------------*/
 /* Task handles */
@@ -45,12 +47,12 @@ void Tasks_Init(void)
     keepAliveTimerHandle = osTimerNew(KeepAliveTimer_Callback, osTimerPeriodic, NULL, NULL);
 
     /* Create threads */
-    const osThreadAttr_t defaultTask_attributes = {
-            .name = "defaultTask",
-            .stack_size = 32 * 4,
-            .priority = (osPriority_t) osPriorityNormal,
-    };
-    defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+//    const osThreadAttr_t defaultTask_attributes = {
+//            .name = "defaultTask",
+//            .stack_size = 32 * 4,
+//            .priority = (osPriority_t) osPriorityNormal,
+//    };
+//    defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
     const osThreadAttr_t ESP8266Task_attributes = {
             .name = "ESP8266Task",
@@ -172,20 +174,20 @@ void StartDataProcessTask(void *argument)
     {
         // Process UART data
         //UART2_ProcessData();
-        UART2_ProcessDMAData();
+        //UART2_ProcessDMAData();
 
         // Process MQTT messages
         MQTT_Message_t mqtt_msg;
         if(osMessageQueueGet(mqttQueueHandle, &mqtt_msg, NULL, 100) == osOK)
         {
             // Handle received MQTT command
-            if(strstr(mqtt_msg.payload, "LED_ON") != NULL)
-            {
-                HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, GPIO_PIN_SET);
-            }
-            else if(strstr(mqtt_msg.payload, "LED_OFF") != NULL)
+            if(strstr(mqtt_msg.payload + 10, "LED_ON") != NULL)
             {
                 HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, GPIO_PIN_RESET);
+            }
+            else if(strstr(mqtt_msg.payload + 10, "LED_OFF") != NULL)
+            {
+                HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, GPIO_PIN_SET);
             }
         }
     }
