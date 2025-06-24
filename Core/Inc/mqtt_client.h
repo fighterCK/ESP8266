@@ -28,7 +28,16 @@ typedef struct {
 } MQTT_Message_t;
 
 /* Exported constants --------------------------------------------------------*/
+#define MQTT_BROKER                 "192.168.1.49"
+#define MQTT_PORT                   "1883"
+#define MQTT_CLIENT_ID              "STM32_Client"
+#define MQTT_USERNAME               "ck"
+#define MQTT_PASSWORD               "123456"
+#define MQTT_TOPIC_PUB              "stm32/sensor/data"
+#define MQTT_TOPIC_SUB              "stm32/control/cmd"
 
+#define MQTT_KEEP_ALIVE             60
+#define MQTT_BUFFER_SIZE            512
 
 /* Exported macro ------------------------------------------------------------*/
 

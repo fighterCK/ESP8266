@@ -3,9 +3,8 @@
 mqtt_client.c - MQTT客户端实现文件
 ================================================================================
 */
-#include "mqtt.h"
+#include "mqtt_client.h"
 #include "app_task.h"
-#include "config.h"
 
 /* Private variables ---------------------------------------------------------*/
 volatile uint8_t mqtt_connected = 0;

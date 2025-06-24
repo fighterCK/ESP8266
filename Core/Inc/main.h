@@ -16,7 +16,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 #include "esp8266.h"
-#include "mqtt.h"
+#include "mqtt_client.h"
 
 /* Exported types ------------------------------------------------------------*/
 
