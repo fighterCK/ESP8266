@@ -5,8 +5,9 @@ tasks.c - FreeRTOS任务实现文件
 */
 #include "app_task.h"
 #include "esp8266.h"
-#include "mqtt_client.h"
+#include "mqtt.h"
 #include "uart.h"
+#include "config.h"
 
 /* Private variables ---------------------------------------------------------*/
 /* Task handles */
@@ -42,15 +43,15 @@ void Tasks_Init(void)
     uart2MutexHandle = osMutexNew(NULL);
 
     /* Create timer */
-    keepAliveTimerHandle = osTimerNew(KeepAliveTimer_Callback, osTimerPeriodic, NULL, NULL);
+    //keepAliveTimerHandle = osTimerNew(KeepAliveTimer_Callback, osTimerPeriodic, NULL, NULL);
 
-    /* Create threads */
-    const osThreadAttr_t defaultTask_attributes = {
-            .name = "defaultTask",
-            .stack_size = 32 * 4,
-            .priority = (osPriority_t) osPriorityNormal,
-    };
-    defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+//    /* Create threads */
+//    const osThreadAttr_t defaultTask_attributes = {
+//            .name = "defaultTask",
+//            .stack_size = 32 * 4,
+//            .priority = (osPriority_t) osPriorityNormal,
+//    };
+//    defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
     const osThreadAttr_t ESP8266Task_attributes = {
             .name = "ESP8266Task",
@@ -84,7 +85,7 @@ void StartDefaultTask(void *argument)
     for(;;)
     {
         // Toggle LED to indicate system is running
-        HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_PIN);
+        //HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_PIN);
         osDelay(1000);
     }
 }
@@ -172,18 +173,18 @@ void StartDataProcessTask(void *argument)
     {
         // Process UART data
         //UART2_ProcessData();
-        UART2_ProcessDMAData();
+       // UART2_ProcessDMAData();
 
         // Process MQTT messages
         MQTT_Message_t mqtt_msg;
         if(osMessageQueueGet(mqttQueueHandle, &mqtt_msg, NULL, 100) == osOK)
         {
             // Handle received MQTT command
-            if(strstr(mqtt_msg.payload, "LED_ON") != NULL)
+            if(strstr(mqtt_msg.payload + 20, "LED_OFF") != NULL)
             {
                 HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, GPIO_PIN_SET);
             }
-            else if(strstr(mqtt_msg.payload, "LED_OFF") != NULL)
+            else if(strstr(mqtt_msg.payload  + 20, "LED_ON") != NULL)
             {
                 HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, GPIO_PIN_RESET);
             }

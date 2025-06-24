@@ -78,6 +78,7 @@ void HAL_UART_IdleCallback(UART_HandleTypeDef *huart)
         if(recv_len > 0)
         {
             // 复制数据到处理缓冲区
+            memset(uart2_process_buffer, 0, UART_DMA_BUFFER_SIZE);
             memcpy(uart2_process_buffer, uart2_dma_buffer, recv_len);
             //HAL_UART_Transmit(&huart1, uart2_process_buffer, sizeof(uart2_process_buffer), 100);
             // 解析接收到的数据
@@ -136,9 +137,19 @@ static void UART2_ParseReceivedData(uint8_t* data, uint16_t length)
         uart_msg.length = length;
 
         // 尝试将消息放入队列（非阻塞）
-        if(osMessageQueuePut(uart2QueueHandle, &uart_msg, 0, 0) == osOK)
+        if (strstr(uart_msg.data, "+IPD,") > 0)
         {
-            //HAL_UART_Transmit(&huart1, "osMessageQueuePut error\r\n", sizeof("osMessageQueuePut error\r\n"), 100);
+            const char *colon = strchr(uart_msg.data, ':');
+//            mqtt_packet_t out;
+//            mqtt_parse_all(colon+1, length, &out);
+            MQTT_Message_t mqtt_msg;
+            memcpy(mqtt_msg.payload, colon+1, length);
+           // memcpy(mqtt_msg.payload, out.publish.payload, sizeof(mqtt_msg.payload));
+            osMessageQueuePut(mqttQueueHandle, &mqtt_msg, 0, 0);
+        }
+        else
+        {
+            osMessageQueuePut(uart2QueueHandle, &uart_msg, 0, 0);
         }
     }
 
