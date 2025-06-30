@@ -39,7 +39,7 @@ void StartDefaultTask(void *argument);
 void StartESP8266Task(void *argument);
 void StartMQTTPublishTask(void *argument);
 void StartDataProcessTask(void *argument);
-
+void StartSensorTask(void *argument);
 void Tasks_Init(void);
 
 #ifdef __cplusplus
