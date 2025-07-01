@@ -42,8 +42,8 @@ void KeepAliveTimer_Callback(void *argument);
 void Tasks_Init(void)
 {
     /* Create queues */
-    uart2QueueHandle = osMessageQueueNew(8, sizeof(UartMessage_t), NULL);
-    mqttQueueHandle = osMessageQueueNew(8, sizeof(MQTT_Message_t), NULL);
+    uart2QueueHandle = osMessageQueueNew(4, sizeof(UartMessage_t), NULL);
+    mqttQueueHandle = osMessageQueueNew(4, sizeof(MQTT_Message_t), NULL);
 
     /* Create mutex */
     uart2MutexHandle = osMutexNew(NULL);
@@ -52,30 +52,30 @@ void Tasks_Init(void)
     keepAliveTimerHandle = osTimerNew(KeepAliveTimer_Callback, osTimerPeriodic, NULL, NULL);
 
     /* Create threads */
-//    const osThreadAttr_t defaultTask_attributes = {
-//            .name = "defaultTask",
-//            .stack_size = 32 * 4,
-//            .priority = (osPriority_t) osPriorityNormal,
-//    };
-//    defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+    const osThreadAttr_t defaultTask_attributes = {
+            .name = "defaultTask",
+            .stack_size = 256 * 4,
+            .priority = (osPriority_t) osPriorityNormal,
+    };
+    defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
     const osThreadAttr_t ESP8266Task_attributes = {
             .name = "ESP8266Task",
-            .stack_size = 320 * 4,
+            .stack_size = 896 * 4,
             .priority = (osPriority_t) osPriorityHigh,
     };
     ESP8266TaskHandle = osThreadNew(StartESP8266Task, NULL, &ESP8266Task_attributes);
 
     const osThreadAttr_t MQTTPublishTask_attributes = {
             .name = "MQTTPublishTask",
-            .stack_size = 320 * 4,
+            .stack_size = 512 * 4,
             .priority = (osPriority_t) osPriorityNormal,
     };
     MQTTPublishTaskHandle = osThreadNew(StartMQTTPublishTask, NULL, &MQTTPublishTask_attributes);
 
     const osThreadAttr_t DataProcessTask_attributes = {
             .name = "DataProcessTask",
-            .stack_size = 160 * 4,
+            .stack_size = 256 * 4,
             .priority = (osPriority_t) osPriorityNormal,
     };
     DataProcessTaskHandle = osThreadNew(StartDataProcessTask, NULL, &DataProcessTask_attributes);
@@ -91,8 +91,17 @@ void StartDefaultTask(void *argument)
 {
     for(;;)
     {
-        // Toggle LED to indicate system is running
-        HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_PIN);
+        size_t freeHeap = xPortGetFreeHeapSize();
+        size_t minFreeHeap = xPortGetMinimumEverFreeHeapSize();
+        UBaseType_t uxHighWaterMark = 0;
+        my_printf("freeHeap:%d byte\r\n", freeHeap);
+        my_printf("minFreeHeap:%d byte\r\n", minFreeHeap);
+        uxHighWaterMark = uxTaskGetStackHighWaterMark(ESP8266TaskHandle);
+        my_printf("StartESP8266Task is %d\r\n", uxHighWaterMark);
+        uxHighWaterMark = uxTaskGetStackHighWaterMark(MQTTPublishTaskHandle);
+        my_printf("MQTTPublishTask is %d\r\n", uxHighWaterMark);
+        uxHighWaterMark = uxTaskGetStackHighWaterMark(DataProcessTaskHandle);
+        my_printf("DataProcessTask is %d\r\n", uxHighWaterMark);
         osDelay(1000);
     }
 }
@@ -127,19 +136,39 @@ void StartESP8266Task(void *argument)
     for(;;)
     {
         // Check connections periodically
+        if(ESP8266_SendCommand("AT+CWJAP?", "+CWJAP:", 15000) == ESP8266_OK)
+        {
+            wifi_connected = 1;
+        }
+        else
+        {
+            wifi_connected = 0;
+        }
+        if(ESP8266_SendCommand("AT+CIPSTATUS", "STATUS:3", 15000) == ESP8266_OK)
+        {
+            mqtt_connected = 1;
+        }
+        else
+        {
+            mqtt_connected = 0;
+        }
+
         if(!wifi_connected)
         {
-            ESP8266_ConnectWiFi(WIFI_SSID, WIFI_PASSWORD);
+            while(ESP8266_ConnectWiFi(WIFI_SSID, WIFI_PASSWORD) != ESP8266_OK)
+            {
+                osDelay(5000); // Retry every 5 seconds
+            }
         }
 
         if(!mqtt_connected && wifi_connected)
         {
-            MQTT_Connect();
+            while(MQTT_Connect() != MQTT_OK)
+            {
+                osDelay(5000); // Retry every 5 seconds
+            }
             MQTT_Subscribe(MQTT_TOPIC_SUB);
         }
-        // 检查栈使用情况
-        uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
-        my_printf("StartESP8266Task is %d\r\n", uxHighWaterMark);
         osDelay(10000); // Check every 10 seconds
     }
 }
@@ -165,10 +194,6 @@ void StartMQTTPublishTask(void *argument) {
 
                 // Publish data
                 MQTT_Publish(MQTT_TOPIC_PUB, payload);
-                // 检查栈使用情况
-                uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
-                //HAL_UART_Transmit(&huart1, (uint8_t *)&uxHighWaterMark, 1, HAL_MAX_DELAY);%d
-                my_printf("StartMQTTPublishTask is %d\r\n", uxHighWaterMark);
             }
         }
 
@@ -205,10 +230,6 @@ void StartDataProcessTask(void *argument)
             {
                 HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, GPIO_PIN_SET);
             }
-            // 检查栈使用情况
-            uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
-            //HAL_UART_Transmit(&huart1, (uint8_t *)&uxHighWaterMark, 1, HAL_MAX_DELAY);%d
-            my_printf("StartDataProcessTask is %d\r\n", uxHighWaterMark);
         }
     }
 }
