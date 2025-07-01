@@ -4,10 +4,11 @@ main.c - 主程序文件
 ================================================================================
 */
 #include "main.h"
-#include "task.h"
 #include "uart.h"
 #include "app_task.h"
 #include "task_monitor.h"
+#include "dht11.h"
+#include "tim1_us.h"
 
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart1;
@@ -53,6 +54,9 @@ int main(void)
     MX_DMA_Init();
     HAL_UART_MspInit2(&huart2);
     UART2_Init();
+    if (DHT11_Init() == DHT11_OK) {
+        // 初始化成功
+    }
     /* Init scheduler */
     osKernelInitialize();
 
@@ -147,6 +151,12 @@ static void MX_GPIO_Init(void)
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     HAL_GPIO_Init(LED_GPIO_PORT, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_0;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
 }
 
 /**
@@ -277,11 +287,20 @@ void HAL_UART_MspDeInit2(UART_HandleTypeDef* huart)
   * @param  None
   * @retval None
   */
-PUTCHAR_PROTOTYPE
-{
-/*Place your implementation of fputc here
-e.g. write a character to the USART1 and Loop until the end of transmission */
-HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 0xFFFF);
-
-return ch;
+//PUTCHAR_PROTOTYPE
+//{
+///*Place your implementation of fputc here
+//e.g. write a character to the USART1 and Loop until the end of transmission */
+//HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 0xFFFF);
+//
+//return ch;
+//}
+/**
+ * @brief printf重定向到UART
+ */
+#ifdef __GNUC__
+int _write(int file, char *ptr, int len) {
+    HAL_UART_Transmit(&huart1, (uint8_t*)ptr, len, 1000);
+    return len;
 }
+#endif

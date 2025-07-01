@@ -10,6 +10,8 @@ tasks.c - FreeRTOS任务实现文件
 #include "mqtt.h"
 #include "config.h"
 #include "dht11.h"
+#include "tim1_us.h"
+
 
 /* Private variables ---------------------------------------------------------*/
 /* Task handles */
@@ -31,8 +33,6 @@ osTimerId_t keepAliveTimerHandle;
 /* Private function prototypes -----------------------------------------------*/
 void KeepAliveTimer_Callback(void *argument);
 /* Private variables ---------------------------------------------------------*/
-static DHT11_Data_t sensor_data;
-static char json_buffer[256];
 
 /**
   * @brief  Initialize all tasks and RTOS objects
@@ -60,24 +60,25 @@ void Tasks_Init(void)
 
     const osThreadAttr_t ESP8266Task_attributes = {
             .name = "ESP8266Task",
-            .stack_size = 256 * 4,
+            .stack_size = 384 * 4,
             .priority = (osPriority_t) osPriorityHigh,
     };
     ESP8266TaskHandle = osThreadNew(StartESP8266Task, NULL, &ESP8266Task_attributes);
 
     const osThreadAttr_t MQTTPublishTask_attributes = {
             .name = "MQTTPublishTask",
-            .stack_size = 288 * 4,
+            .stack_size = 512 * 4,
             .priority = (osPriority_t) osPriorityNormal,
     };
-    MQTTPublishTaskHandle = osThreadNew(StartSensorTask, NULL, &MQTTPublishTask_attributes);
+    MQTTPublishTaskHandle = osThreadNew(StartMQTTPublishTask, NULL, &MQTTPublishTask_attributes);
 
-    const osThreadAttr_t DataProcessTask_attributes = {
-            .name = "DataProcessTask",
-            .stack_size = 256 * 4,
-            .priority = (osPriority_t) osPriorityNormal,
-    };
-    DataProcessTaskHandle = osThreadNew(StartDataProcessTask, NULL, &DataProcessTask_attributes);
+//    const osThreadAttr_t DataProcessTask_attributes = {
+//            .name = "DataProcessTask",
+//            .stack_size = 128 * 4,
+//            .priority = (osPriority_t) osPriorityNormal,
+//    };
+//    DataProcessTaskHandle = osThreadNew(StartDataProcessTask, NULL, &DataProcessTask_attributes);
+
 }
 
 /**
@@ -145,102 +146,30 @@ void StartESP8266Task(void *argument)
   * @param  argument: Not used
   * @retval None
   */
-void StartMQTTPublishTask(void *argument)
-{
+DHT11_Data_t sensor_data;
+void StartMQTTPublishTask(void *argument) {
     char payload[128];
     uint32_t counter = 0;
+    DHT11_Data_t data;
+    for (;;) {
+        if (mqtt_connected) {
+            if (DHT11_Read_Raw_Data(&data) == DHT11_OK) {
+                // Create sensor data payload (example)
+                snprintf(payload, sizeof(payload),
+                         "{\"timestamp\":%lu,\"temperature\":%d,\"humidity\":%d,\"counter\":%lu}",
+                         osKernelGetTickCount(), data.temperature_int, data.humidity_int, counter++);
 
-    for(;;)
-    {
-        if(mqtt_connected)
-        {
-            // Create sensor data payload (example)
-            snprintf(payload, sizeof(payload),
-                     "{\"timestamp\":%lu,\"temperature\":25.6,\"humidity\":60.3,\"counter\":%lu}",
-                     osKernelGetTickCount(), counter++);
-
-            // Publish data
-            MQTT_Publish(MQTT_TOPIC_PUB, payload);
+                // Publish data
+                MQTT_Publish(MQTT_TOPIC_PUB, payload);
+            }
         }
 
         osDelay(30000); // Publish every 30 seconds
     }
 }
-/**
-  * @brief  传感器数据采集任务
-  * @param  argument: Not used
-  * @retval None
-  */
-void StartSensorTask(void *argument)
-{
-    uint32_t last_read_time = 0;
-    uint32_t read_interval = 5000; // 5秒采集一次
-
-    // 初始化DHT11传感器
-    DHT11_Init();
-
-    for(;;)
-    {
-        uint32_t current_time = osKernelGetTickCount();
 
 
-            // 读取DHT11数据
-            if(DHT11_ReadData(&sensor_data) == DHT11_OK)
-            {
-                // 格式化JSON数据
-                snprintf(json_buffer, sizeof(json_buffer),
-                         "{"
-                         "\"device_id\":\"STM32_DHT11\","
-                         "\"timestamp\":%lu,"
-                         "\"temperature\":%.1f,"
-                         "\"humidity\":%.1f,"
-                         "\"status\":\"ok\""
-                         "}",
-                         current_time,
-                         sensor_data.temperature,
-                         sensor_data.humidity
-                );
 
-                // 通过MQTT发布数据
-                if(mqtt_connected)
-                {
-                    MQTT_Publish(MQTT_TOPIC_PUB, json_buffer);
-
-                    // 可选：发送到串口调试
-//                    printf("Temperature: %.1f°C, Humidity: %.1f%%\r\n",
-//                           sensor_data.temperature, sensor_data.humidity);
-                }
-
-                // 指示灯闪烁表示数据采集成功
-                HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_PIN);
-            }
-            else
-            {
-                // 读取失败，发送错误信息
-                snprintf(json_buffer, sizeof(json_buffer),
-                         "{"
-                         "\"device_id\":\"STM32_DHT11\","
-                         "\"timestamp\":%lu,"
-                         "\"status\":\"error\","
-                         "\"message\":\"DHT11 read failed\""
-                         "}",
-                         current_time
-                );
-
-                if(mqtt_connected)
-                {
-                    MQTT_Publish("home/error/stm32", json_buffer);
-                }
-
-                //printf("DHT11 read error!\r\n");
-            }
-
-            last_read_time = current_time;
-
-
-        osDelay(3000); // 短暂延时，避免占用过多CPU
-    }
-}
 /**
   * @brief  Data processing task
   * @param  argument: Not used
