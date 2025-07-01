@@ -11,6 +11,7 @@ tasks.c - FreeRTOS任务实现文件
 #include "config.h"
 #include "dht11.h"
 #include "tim1_us.h"
+#include "my_printf.h"
 
 
 /* Private variables ---------------------------------------------------------*/
@@ -60,24 +61,24 @@ void Tasks_Init(void)
 
     const osThreadAttr_t ESP8266Task_attributes = {
             .name = "ESP8266Task",
-            .stack_size = 384 * 4,
+            .stack_size = 320 * 4,
             .priority = (osPriority_t) osPriorityHigh,
     };
     ESP8266TaskHandle = osThreadNew(StartESP8266Task, NULL, &ESP8266Task_attributes);
 
     const osThreadAttr_t MQTTPublishTask_attributes = {
             .name = "MQTTPublishTask",
-            .stack_size = 512 * 4,
+            .stack_size = 320 * 4,
             .priority = (osPriority_t) osPriorityNormal,
     };
     MQTTPublishTaskHandle = osThreadNew(StartMQTTPublishTask, NULL, &MQTTPublishTask_attributes);
 
-//    const osThreadAttr_t DataProcessTask_attributes = {
-//            .name = "DataProcessTask",
-//            .stack_size = 128 * 4,
-//            .priority = (osPriority_t) osPriorityNormal,
-//    };
-//    DataProcessTaskHandle = osThreadNew(StartDataProcessTask, NULL, &DataProcessTask_attributes);
+    const osThreadAttr_t DataProcessTask_attributes = {
+            .name = "DataProcessTask",
+            .stack_size = 160 * 4,
+            .priority = (osPriority_t) osPriorityNormal,
+    };
+    DataProcessTaskHandle = osThreadNew(StartDataProcessTask, NULL, &DataProcessTask_attributes);
 
 }
 
@@ -122,7 +123,7 @@ void StartESP8266Task(void *argument)
 
     // Start keep-alive timer
     osTimerStart(keepAliveTimerHandle, 60000); // 60 seconds
-
+    UBaseType_t uxHighWaterMark = 0;
     for(;;)
     {
         // Check connections periodically
@@ -136,7 +137,9 @@ void StartESP8266Task(void *argument)
             MQTT_Connect();
             MQTT_Subscribe(MQTT_TOPIC_SUB);
         }
-
+        // 检查栈使用情况
+        uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
+        my_printf("StartESP8266Task is %d\r\n", uxHighWaterMark);
         osDelay(10000); // Check every 10 seconds
     }
 }
@@ -151,6 +154,7 @@ void StartMQTTPublishTask(void *argument) {
     char payload[128];
     uint32_t counter = 0;
     DHT11_Data_t data;
+    UBaseType_t uxHighWaterMark = 0;
     for (;;) {
         if (mqtt_connected) {
             if (DHT11_Read_Raw_Data(&data) == DHT11_OK) {
@@ -161,10 +165,14 @@ void StartMQTTPublishTask(void *argument) {
 
                 // Publish data
                 MQTT_Publish(MQTT_TOPIC_PUB, payload);
+                // 检查栈使用情况
+                uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
+                //HAL_UART_Transmit(&huart1, (uint8_t *)&uxHighWaterMark, 1, HAL_MAX_DELAY);%d
+                my_printf("StartMQTTPublishTask is %d\r\n", uxHighWaterMark);
             }
         }
 
-        osDelay(30000); // Publish every 30 seconds
+        osDelay(5000); // Publish every 30 seconds
     }
 }
 
@@ -177,6 +185,7 @@ void StartMQTTPublishTask(void *argument) {
   */
 void StartDataProcessTask(void *argument)
 {
+    UBaseType_t uxHighWaterMark = 0;
     for(;;)
     {
         // Process UART data
@@ -196,6 +205,10 @@ void StartDataProcessTask(void *argument)
             {
                 HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, GPIO_PIN_SET);
             }
+            // 检查栈使用情况
+            uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
+            //HAL_UART_Transmit(&huart1, (uint8_t *)&uxHighWaterMark, 1, HAL_MAX_DELAY);%d
+            my_printf("StartDataProcessTask is %d\r\n", uxHighWaterMark);
         }
     }
 }

@@ -298,9 +298,13 @@ void HAL_UART_MspDeInit2(UART_HandleTypeDef* huart)
 /**
  * @brief printf重定向到UART
  */
-#ifdef __GNUC__
-int _write(int file, char *ptr, int len) {
-    HAL_UART_Transmit(&huart1, (uint8_t*)ptr, len, 1000);
-    return len;
+//#ifdef __GNUC__
+//int _write(int file, char *ptr, int len) {
+//    HAL_UART_Transmit(&huart1, (uint8_t*)ptr, len, 1000);
+//    return len;
+//}
+//#endif
+int fputc(int ch, FILE *f) {
+    HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+    return ch;
 }
-#endif
