@@ -41,7 +41,6 @@ void StartMQTTPublishTask(void *argument);
 void StartDataProcessTask(void *argument);
 void StartSensorTask(void *argument);
 void Tasks_Init(void);
-
 #ifdef __cplusplus
 }
 #endif
