@@ -21,7 +21,7 @@ static ESP8266_StatusTypeDef ESP8266_WaitResponse(const char* expected, uint32_t
 ESP8266_StatusTypeDef ESP8266_Init(void)
 {
     // Test AT command
-    if(ESP8266_SendCommand("AT", "OK", 2000) != ESP8266_OK)
+    if(ESP8266_SendCommand("AT+RESTORE", "OK", 2000) != ESP8266_OK)
         return ESP8266_ERROR;
 
     osDelay(1000);

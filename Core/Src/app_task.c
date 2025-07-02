@@ -34,6 +34,36 @@ osTimerId_t keepAliveTimerHandle;
 /* Private function prototypes -----------------------------------------------*/
 void KeepAliveTimer_Callback(void *argument);
 /* Private variables ---------------------------------------------------------*/
+void show_task_list(void)
+{
+    char buffer[256];
+    memset(buffer, 0, sizeof(buffer));
+    vTaskList(buffer);
+    size_t freeHeap = xPortGetFreeHeapSize();
+    size_t minFreeHeap = xPortGetMinimumEverFreeHeapSize();
+    my_printf("Name\t\tState\tPrio\tStack\tNum\tfreeHeap\tminFreeHeap\r\n");
+    my_printf("%s\t\t\t\t\t\t%d\t\t%d\r\n", buffer, freeHeap, minFreeHeap);
+//    my_printf("freeHeap:%d byte\r\n", freeHeap);
+//    my_printf("minFreeHeap:%d byte\r\n", minFreeHeap);
+}
+
+void vMonitorTask(void *pvParameters)
+{
+    while (1)
+    {
+        show_task_list();
+        vTaskDelay(pdMS_TO_TICKS(1000));  // 每 5 秒打印一次
+    }
+}
+
+
+void StackHogTask(void *arg)
+{
+    char waste[200];  // 占用栈空间
+    (void)waste;
+
+    StackHogTask(NULL);  // 递归调用自己制造溢出
+}
 
 /**
   * @brief  Initialize all tasks and RTOS objects
@@ -57,11 +87,11 @@ void Tasks_Init(void)
             .stack_size = 256 * 4,
             .priority = (osPriority_t) osPriorityNormal,
     };
-    defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+    defaultTaskHandle = osThreadNew(vMonitorTask, NULL, &defaultTask_attributes);
 
     const osThreadAttr_t ESP8266Task_attributes = {
             .name = "ESP8266Task",
-            .stack_size = 896 * 4,
+            .stack_size = 512 * 4,
             .priority = (osPriority_t) osPriorityHigh,
     };
     ESP8266TaskHandle = osThreadNew(StartESP8266Task, NULL, &ESP8266Task_attributes);
@@ -132,11 +162,10 @@ void StartESP8266Task(void *argument)
 
     // Start keep-alive timer
     osTimerStart(keepAliveTimerHandle, 60000); // 60 seconds
-    UBaseType_t uxHighWaterMark = 0;
     for(;;)
     {
         // Check connections periodically
-        if(ESP8266_SendCommand("AT+CWJAP?", "+CWJAP:", 15000) == ESP8266_OK)
+        if(ESP8266_SendCommand("AT+CWJAP?", "+CWJAP:", 5000) == ESP8266_OK)
         {
             wifi_connected = 1;
         }
@@ -144,7 +173,7 @@ void StartESP8266Task(void *argument)
         {
             wifi_connected = 0;
         }
-        if(ESP8266_SendCommand("AT+CIPSTATUS", "STATUS:3", 15000) == ESP8266_OK)
+        if(ESP8266_SendCommand("AT+CIPSTATUS", "STATUS:3", 5000) == ESP8266_OK)
         {
             mqtt_connected = 1;
         }
@@ -155,18 +184,12 @@ void StartESP8266Task(void *argument)
 
         if(!wifi_connected)
         {
-            while(ESP8266_ConnectWiFi(WIFI_SSID, WIFI_PASSWORD) != ESP8266_OK)
-            {
-                osDelay(5000); // Retry every 5 seconds
-            }
+            ESP8266_ConnectWiFi(WIFI_SSID, WIFI_PASSWORD);
         }
 
         if(!mqtt_connected && wifi_connected)
         {
-            while(MQTT_Connect() != MQTT_OK)
-            {
-                osDelay(5000); // Retry every 5 seconds
-            }
+            MQTT_Connect();
             MQTT_Subscribe(MQTT_TOPIC_SUB);
         }
         osDelay(10000); // Check every 10 seconds

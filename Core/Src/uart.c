@@ -8,6 +8,7 @@ uart_handler.c - UART DMA IDLE处理实现文件
 #include "esp8266.h"
 #include "uart.h"
 #include "app_task.h"
+#include "my_printf.h"
 
 /* Private variables ---------------------------------------------------------*/
 uint8_t uart2_dma_buffer[UART_DMA_BUFFER_SIZE];

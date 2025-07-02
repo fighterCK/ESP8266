@@ -21,6 +21,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
+#include "my_printf.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -54,6 +55,18 @@
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    // 打印栈溢出的任务名
+    //my_printf("Stack overflow detected in task: %s\n", pcTaskName);
 
+    // 此处可以选择重启、卡死、闪灯等
+    while (1)
+    {
+        my_printf("Stack overflow detected in task: %s\n", pcTaskName);
+        osDelay(pdMS_TO_TICKS(1));
+        // 死循环防止继续运行
+    }
+}
 /* USER CODE END Application */
 
