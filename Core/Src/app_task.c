@@ -17,7 +17,7 @@ tasks.c - FreeRTOS任务实现文件
 
 /* Private variables ---------------------------------------------------------*/
 /* Task handles */
-osThreadId_t defaultTaskHandle;
+osThreadId_t MonitorTaskHandle;
 osThreadId_t ESP8266TaskHandle;
 osThreadId_t MQTTPublishTaskHandle;
 osThreadId_t DataProcessTaskHandle;
@@ -59,18 +59,18 @@ void Tasks_Init(void)
             .stack_size = 320 * 4,
             .priority = (osPriority_t) osPriorityNormal,
     };
-    defaultTaskHandle = osThreadNew(vMonitorTask, NULL, &defaultTask_attributes);
+    MonitorTaskHandle = osThreadNew(vMonitorTask, NULL, &defaultTask_attributes);
 
     const osThreadAttr_t ESP8266Task_attributes = {
             .name = "ESP8266Task",
-            .stack_size = 480 * 4,
+            .stack_size = 384 * 4,
             .priority = (osPriority_t) osPriorityHigh,
     };
     ESP8266TaskHandle = osThreadNew(StartESP8266Task, NULL, &ESP8266Task_attributes);
 
     const osThreadAttr_t MQTTPublishTask_attributes = {
             .name = "MQTTPublishTask",
-            .stack_size = 320 * 4,
+            .stack_size = 384 * 4,
             .priority = (osPriority_t) osPriorityNormal,
     };
     MQTTPublishTaskHandle = osThreadNew(StartMQTTPublishTask, NULL, &MQTTPublishTask_attributes);
