@@ -9,6 +9,7 @@ main.c - 主程序文件
 #include "task_monitor.h"
 #include "dht11.h"
 #include "tim1_us.h"
+#include "soft_i2c.h"
 
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart1;

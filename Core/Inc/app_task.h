@@ -41,6 +41,8 @@ void StartMQTTPublishTask(void *argument);
 void StartDataProcessTask(void *argument);
 void StartSensorTask(void *argument);
 void Tasks_Init(void);
+void OLED_Task(void  * argument);
+void vMonitorTask(void *pvParameters);
 #ifdef __cplusplus
 }
 #endif

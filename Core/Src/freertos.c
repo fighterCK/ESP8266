@@ -58,7 +58,7 @@
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
     // 打印栈溢出的任务名
-    //my_printf("Stack overflow detected in task: %s\n", pcTaskName);
+    my_printf("Stack overflow detected in task: %s\n", pcTaskName);
 
     // 此处可以选择重启、卡死、闪灯等
     while (1)
