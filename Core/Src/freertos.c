@@ -64,7 +64,7 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
     while (1)
     {
         my_printf("Stack overflow detected in task: %s\n", pcTaskName);
-        osDelay(pdMS_TO_TICKS(1));
+        osDelay(pdMS_TO_TICKS(100));
         // 死循环防止继续运行
     }
 }

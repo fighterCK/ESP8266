@@ -26,7 +26,12 @@ osThreadId oledTaskHandle;
 /* Queue handles */
 osMessageQueueId_t uart2QueueHandle;
 osMessageQueueId_t mqttQueueHandle;
-osMessageQueueId_t dht11dQueueHandle;
+osMessageQueueId_t dht11QueueHandle;
+osMessageQueueId_t ledQueueHandle;
+typedef struct {
+    char* pin_state;
+} LED_Message_t;
+
 /* Mutex handles */
 osMutexId_t uart2MutexHandle;
 
@@ -46,7 +51,8 @@ void Tasks_Init(void)
     /* Create queues */
     uart2QueueHandle = osMessageQueueNew(4, sizeof(UartMessage_t), NULL);
     mqttQueueHandle = osMessageQueueNew(4, sizeof(MQTT_Message_t), NULL);
-    dht11dQueueHandle = osMessageQueueNew(4, sizeof(DHT11_Data_t), NULL);
+    dht11QueueHandle = osMessageQueueNew(4, sizeof(DHT11_Data_t), NULL);
+    ledQueueHandle = osMessageQueueNew(3, sizeof(LED_Message_t), NULL);
     /* Create mutex */
     uart2MutexHandle = osMutexNew(NULL);
 
@@ -63,7 +69,7 @@ void Tasks_Init(void)
 
     const osThreadAttr_t ESP8266Task_attributes = {
             .name = "ESP8266Task",
-            .stack_size = 384 * 4,
+            .stack_size = 352 * 4,
             .priority = (osPriority_t) osPriorityHigh,
     };
     ESP8266TaskHandle = osThreadNew(StartESP8266Task, NULL, &ESP8266Task_attributes);
@@ -187,13 +193,14 @@ void StartMQTTPublishTask(void *argument) {
         if (mqtt_connected) {
             if (DHT11_Read_Raw_Data(&data) == DHT11_OK) {
                 // Create sensor data payload (example)
+                GPIO_PinState pin_state = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
                 snprintf(payload, sizeof(payload),
-                         "{\"timestamp\":%lu,\"temperature\":%d,\"humidity\":%d,\"counter\":%lu}",
-                         osKernelGetTickCount(), data.temperature_int, data.humidity_int, counter++);
+                         "{\"timestamp\":%lu,\"temperature\":%d,\"humidity\":%d,\"led_state\":%s,\"counter\":%lu}",
+                         osKernelGetTickCount(), data.temperature_int, data.humidity_int, pin_state==0?"ON":"OFF", counter++);
 
                 // Publish data
                 MQTT_Publish(MQTT_TOPIC_PUB, payload);
-                osMessageQueuePut(dht11dQueueHandle, &data, 0, 0);
+                osMessageQueuePut(dht11QueueHandle, &data, 0, 0);
             }
         }
 
@@ -219,16 +226,23 @@ void StartDataProcessTask(void *argument)
 
         // Process MQTT messages
         MQTT_Message_t mqtt_msg;
+        LED_Message_t led_state;
         if(osMessageQueueGet(mqttQueueHandle, &mqtt_msg, NULL, 100) == osOK)
         {
             // Handle received MQTT command
             if(strstr(mqtt_msg.payload + 10, "LED_ON") != NULL)
             {
                 HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, GPIO_PIN_RESET);
+                GPIO_PinState pin_state = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
+                led_state.pin_state=pin_state==0?"ON":"OFF";
+                osMessageQueuePut(ledQueueHandle, &led_state, 0, 0);
             }
             else if(strstr(mqtt_msg.payload + 10, "LED_OFF") != NULL)
             {
                 HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, GPIO_PIN_SET);
+                GPIO_PinState pin_state = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
+                led_state.pin_state=pin_state==1?"OFF":"ON";
+                osMessageQueuePut(ledQueueHandle, &led_state, 0, 0);
             }
         }
     }
@@ -245,8 +259,9 @@ void OLED_Task(void  * argument)
     /* 清屏 */
     OLED_Clear();
     DHT11_Data_t sensor_data;
+    LED_Message_t led_state={"ON"};
     /* 显示标题 */
-    snprintf(str, sizeof(str), "temperature:  °C");
+    snprintf(str, sizeof(str), "temperature:  ");
     OLED_ShowString(0, 0, str, 16);
     snprintf(str, sizeof(str), "humidity:  %RH");
     OLED_ShowString(0, 2, str, 16);
@@ -258,7 +273,8 @@ void OLED_Task(void  * argument)
     OLED_ShowString(0, 6, str, 16);
     for(;;)
     {
-        if(osMessageQueueGet(dht11dQueueHandle, &sensor_data, NULL, 100) == osOK)
+        if(osMessageQueueGet(dht11QueueHandle, &sensor_data, NULL, 100) == osOK ||
+        osMessageQueueGet(ledQueueHandle, &led_state, NULL, 100) == osOK)
         {
             /* 显示标题 */
             snprintf(str, sizeof(str), "temperature: %d °C", sensor_data.temperature_int);
@@ -266,7 +282,7 @@ void OLED_Task(void  * argument)
             snprintf(str, sizeof(str), "humidity: %d %RH", sensor_data.humidity_int);
             OLED_ShowString(0, 2, str, 16);
             /* 显示计数器 */
-            snprintf(str, sizeof(str), "Count: %lu", counter++);
+            snprintf(str, sizeof(str), "Count: %lu    %s ", counter++, led_state.pin_state);
             OLED_ShowString(0, 4, str, 16);
             /* 显示系统节拍 */
             snprintf(str, sizeof(str), "Tick: %lu", osKernelGetTickCount());

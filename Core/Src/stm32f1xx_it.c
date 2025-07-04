@@ -23,6 +23,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "uart.h"
+#include "my_printf.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 /* USER CODE END Includes */
@@ -94,6 +95,7 @@ void HardFault_Handler(void)
   {
     /* USER CODE BEGIN W1_HardFault_IRQn 0 */
     /* USER CODE END W1_HardFault_IRQn 0 */
+    my_printf("################################################################################");
   }
 }
 
