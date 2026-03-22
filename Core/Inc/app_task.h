@@ -38,9 +38,12 @@ extern osMutexId_t uart2MutexHandle;
 void StartDefaultTask(void *argument);
 void StartESP8266Task(void *argument);
 void StartMQTTPublishTask(void *argument);
+
 void StartDataProcessTask(void *argument);
 void StartSensorTask(void *argument);
 void Tasks_Init(void);
+void OLED_Task(void  * argument);
+void vMonitorTask(void *pvParameters);
 #ifdef __cplusplus
 }
 #endif

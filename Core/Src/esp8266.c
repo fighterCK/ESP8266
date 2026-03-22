@@ -21,14 +21,14 @@ static ESP8266_StatusTypeDef ESP8266_WaitResponse(const char* expected, uint32_t
 ESP8266_StatusTypeDef ESP8266_Init(void)
 {
     // Test AT command
-    if(ESP8266_SendCommand("AT", "OK", 2000) != ESP8266_OK)
+    if(ESP8266_SendCommand("AT+RESTORE", "OK", 2000) != ESP8266_OK)
         return ESP8266_ERROR;
 
     osDelay(1000);
 
     // Reset module
     ESP8266_SendCommand("AT+RST", "OK", 5000);
-    osDelay(3000);
+    osDelay(2000);
 
     // Set WiFi mode to Station
     if(ESP8266_SendCommand("AT+CWMODE=1", "OK", 2000) != ESP8266_OK)
@@ -75,15 +75,46 @@ ESP8266_StatusTypeDef ESP8266_SendCommand(const char* cmd, const char* expected_
 ESP8266_StatusTypeDef ESP8266_ConnectWiFi(const char* ssid, const char* password)
 {
     char cmd_buffer[128];
+    int cmd_len;
+    uint8_t attempt;
 
-    snprintf(cmd_buffer, sizeof(cmd_buffer), "AT+CWJAP=\"%s\",\"%s\"", ssid, password);
+    if((ssid == NULL) || (password == NULL) || (ssid[0] == '\0'))
+    {
+        wifi_connected = 0;
+        return ESP8266_ERROR;
+    }
 
-    if(ESP8266_SendCommand(cmd_buffer, "OK", 15000) == ESP8266_OK)
+    // Fast path: already associated with an AP.
+    if(ESP8266_SendCommand("AT+CWJAP?", "+CWJAP:", 2000) == ESP8266_OK)
     {
         wifi_connected = 1;
         return ESP8266_OK;
     }
 
+    cmd_len = snprintf(cmd_buffer, sizeof(cmd_buffer), "AT+CWJAP=\"%s\",\"%s\"", ssid, password);
+    if((cmd_len < 0) || ((size_t)cmd_len >= sizeof(cmd_buffer)))
+    {
+        wifi_connected = 0;
+        return ESP8266_ERROR;
+    }
+
+    for(attempt = 0; attempt < 3; attempt++)
+    {
+        if(ESP8266_SendCommand(cmd_buffer, "OK", 20000) == ESP8266_OK)
+        {
+            if(ESP8266_SendCommand("AT+CWJAP?", "+CWJAP:", 2000) == ESP8266_OK)
+            {
+                wifi_connected = 1;
+                return ESP8266_OK;
+            }
+        }
+
+        // Ensure clean state before retry.
+        ESP8266_SendCommand("AT+CWQAP", "OK", 2000);
+        osDelay(1000 + (attempt * 2000));
+    }
+
+    wifi_connected = 0;
     return ESP8266_ERROR;
 }
 

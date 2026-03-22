@@ -24,7 +24,7 @@ typedef enum {
 
 typedef struct {
     char topic[64];
-    char payload[256];
+    char payload[128];
 } MQTT_Message_t;
 
 /* Exported constants --------------------------------------------------------*/

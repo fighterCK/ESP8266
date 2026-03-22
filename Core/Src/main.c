@@ -10,6 +10,8 @@ main.c - 主程序文件
 #include "dht11.h"
 #include "tim1_us.h"
 
+#include "SEGGER_SYSVIEW.h"
+
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
@@ -19,11 +21,10 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
-/* 在main.c中添加DMA句柄声明 */
+/* DMA句柄声明 */
 DMA_HandleTypeDef hdma_usart2_rx;
+DMA_HandleTypeDef hdma_usart2_tx;
 static void MX_DMA_Init(void);
-void HAL_UART_MspInit2(UART_HandleTypeDef* huart);
-void HAL_UART_MspDeInit2(UART_HandleTypeDef* huart);
 /**
   * @brief  The application entry point.
   * @retval int
@@ -48,15 +49,10 @@ int main(void)
     MX_GPIO_Init();
 
     /* Initialize UART handler */
-    HAL_UART_MspDeInit2(&huart2);
+    MX_DMA_Init();
     MX_USART1_UART_Init();
     MX_USART2_UART_Init();
-    MX_DMA_Init();
-    HAL_UART_MspInit2(&huart2);
-    UART2_Init();
-    if (DHT11_Init() == DHT11_OK) {
-        // 初始化成功
-    }
+    SEGGER_SYSVIEW_Conf();
     /* Init scheduler */
     osKernelInitialize();
 
@@ -179,9 +175,13 @@ static void MX_DMA_Init(void)
     __HAL_RCC_DMA1_CLK_ENABLE();
 
     /* DMA interrupt init */
-    /* DMA1_Channel6_IRQn interrupt configuration */
+    /* DMA1_Channel6_IRQn - USART2 RX */
     HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 5, 0);
     HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
+
+    /* DMA1_Channel7_IRQn - USART2 TX */
+    HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
 }
 
 /**
@@ -204,84 +204,12 @@ static void MX_USART2_UART_Init(void)
     {
         Error_Handler();
     }
+
+    /* Enable IDLE interrupt + start DMA receive */
+    __HAL_UART_ENABLE_IT(&huart2, UART_IT_IDLE);
+    HAL_UART_Receive_DMA(&huart2, uart2_dma_buffer, UART_DMA_BUFFER_SIZE);
 }
 
-/**
-  * @brief  UART MSP初始化函数
-  * @param  huart: UART handle pointer
-  * @retval None
-  */
-void HAL_UART_MspInit2(UART_HandleTypeDef* huart)
-{
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-    if(huart->Instance == USART2)
-    {
-        /* Peripheral clock enable */
-        __HAL_RCC_USART2_CLK_ENABLE();
-        __HAL_RCC_GPIOA_CLK_ENABLE();
-
-        /* USART2 GPIO Configuration
-        PA2     ------> USART2_TX
-        PA3     ------> USART2_RX */
-        GPIO_InitStruct.Pin = GPIO_PIN_2;
-        GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-        HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-        GPIO_InitStruct.Pin = GPIO_PIN_3;
-        GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-        GPIO_InitStruct.Pull = GPIO_NOPULL;
-        HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-        /* USART2 DMA Init */
-        /* USART2_RX Init */
-        hdma_usart2_rx.Instance = DMA1_Channel6;
-        hdma_usart2_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
-        hdma_usart2_rx.Init.PeriphInc = DMA_PINC_DISABLE;
-        hdma_usart2_rx.Init.MemInc = DMA_MINC_ENABLE;
-        hdma_usart2_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
-        hdma_usart2_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
-        hdma_usart2_rx.Init.Mode = DMA_NORMAL;
-        hdma_usart2_rx.Init.Priority = DMA_PRIORITY_LOW;
-
-        if (HAL_DMA_Init(&hdma_usart2_rx) != HAL_OK)
-        {
-            Error_Handler();
-        }
-
-        __HAL_LINKDMA(huart, hdmarx, hdma_usart2_rx);
-
-        /* USART2 interrupt Init */
-        HAL_NVIC_SetPriority(USART2_IRQn, 5, 0);
-        HAL_NVIC_EnableIRQ(USART2_IRQn);
-    }
-}
-
-/**
-  * @brief  UART MSP反初始化函数
-  * @param  huart: UART handle pointer
-  * @retval None
-  */
-void HAL_UART_MspDeInit2(UART_HandleTypeDef* huart)
-{
-    if(huart->Instance == USART2)
-    {
-        /* Peripheral clock disable */
-        __HAL_RCC_USART2_CLK_DISABLE();
-
-        /* USART2 GPIO Configuration
-        PA2     ------> USART2_TX
-        PA3     ------> USART2_RX */
-        HAL_GPIO_DeInit(GPIOA, GPIO_PIN_2|GPIO_PIN_3);
-
-        /* USART2 DMA DeInit */
-        HAL_DMA_DeInit(huart->hdmarx);
-
-        /* USART2 interrupt DeInit */
-        HAL_NVIC_DisableIRQ(USART2_IRQn);
-    }
-}
 /**
   * @brief  Retargets the C library printf function to the USART.
   * @param  None
@@ -298,9 +226,13 @@ void HAL_UART_MspDeInit2(UART_HandleTypeDef* huart)
 /**
  * @brief printf重定向到UART
  */
-#ifdef __GNUC__
-int _write(int file, char *ptr, int len) {
-    HAL_UART_Transmit(&huart1, (uint8_t*)ptr, len, 1000);
-    return len;
+//#ifdef __GNUC__
+//int _write(int file, char *ptr, int len) {
+//    HAL_UART_Transmit(&huart1, (uint8_t*)ptr, len, 1000);
+//    return len;
+//}
+//#endif
+int fputc(int ch, FILE *f) {
+    HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+    return ch;
 }
-#endif

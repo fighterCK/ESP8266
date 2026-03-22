@@ -23,6 +23,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "uart.h"
+#include "my_printf.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 /* USER CODE END Includes */
@@ -94,6 +95,7 @@ void HardFault_Handler(void)
   {
     /* USER CODE BEGIN W1_HardFault_IRQn 0 */
     /* USER CODE END W1_HardFault_IRQn 0 */
+    my_printf("################################################################################");
   }
 }
 
@@ -230,4 +232,13 @@ extern DMA_HandleTypeDef hdma_usart2_rx;
 void DMA1_Channel6_IRQHandler(void)
 {
     HAL_DMA_IRQHandler(&hdma_usart2_rx);
+}
+
+/**
+  * @brief  DMA1 Channel7中断处理函数 (USART2 TX)
+  */
+extern DMA_HandleTypeDef hdma_usart2_tx;
+void DMA1_Channel7_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(&hdma_usart2_tx);
 }

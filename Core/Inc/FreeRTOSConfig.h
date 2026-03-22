@@ -29,7 +29,6 @@
 
 #ifndef FREERTOS_CONFIG_H
 #define FREERTOS_CONFIG_H
-
 /*-----------------------------------------------------------
  * Application specific definitions.
  *
@@ -43,6 +42,7 @@
  *----------------------------------------------------------*/
 
 /* USER CODE BEGIN Includes */
+#include "SEGGER_SYSVIEW_FreeRTOS.h"
 /* Section where include file can be added */
 /* USER CODE END Includes */
 
@@ -65,7 +65,7 @@
 #define configTICK_RATE_HZ                       ((TickType_t)1000)
 #define configMAX_PRIORITIES                     ( 56 )
 #define configMINIMAL_STACK_SIZE                 ((uint16_t)128)
-#define configTOTAL_HEAP_SIZE                    ((size_t)11 *1024)
+#define configTOTAL_HEAP_SIZE                    ((size_t)7 *1024)
 #define configMAX_TASK_NAME_LEN                  ( 16 )
 #define configUSE_TRACE_FACILITY                 1
 #define configUSE_16_BIT_TICKS                   0
@@ -84,6 +84,9 @@
 #define configTIMER_TASK_PRIORITY                ( 2 )
 #define configTIMER_QUEUE_LENGTH                 10
 #define configTIMER_TASK_STACK_DEPTH             256
+#define configUSE_TRACE_FACILITY                1
+#define configUSE_STATS_FORMATTING_FUNCTIONS    1
+#define configCHECK_FOR_STACK_OVERFLOW    2
 
 /* Set the following definitions to 1 to include the API function, or zero
 to exclude the API function. */

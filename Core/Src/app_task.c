@@ -11,18 +11,26 @@ tasks.c - FreeRTOS任务实现文件
 #include "config.h"
 #include "dht11.h"
 #include "tim1_us.h"
+#include "my_printf.h"
+#include "oled.h"
 
 
 /* Private variables ---------------------------------------------------------*/
 /* Task handles */
-osThreadId_t defaultTaskHandle;
+osThreadId_t MonitorTaskHandle;
 osThreadId_t ESP8266TaskHandle;
 osThreadId_t MQTTPublishTaskHandle;
 osThreadId_t DataProcessTaskHandle;
-
+/* OLED任务句柄 */
+osThreadId oledTaskHandle;
 /* Queue handles */
 osMessageQueueId_t uart2QueueHandle;
 osMessageQueueId_t mqttQueueHandle;
+osMessageQueueId_t dht11QueueHandle;
+osMessageQueueId_t ledQueueHandle;
+typedef struct {
+    char* pin_state;
+} LED_Message_t;
 
 /* Mutex handles */
 osMutexId_t uart2MutexHandle;
@@ -41,9 +49,10 @@ void KeepAliveTimer_Callback(void *argument);
 void Tasks_Init(void)
 {
     /* Create queues */
-    uart2QueueHandle = osMessageQueueNew(8, sizeof(UartMessage_t), NULL);
-    mqttQueueHandle = osMessageQueueNew(8, sizeof(MQTT_Message_t), NULL);
-
+    uart2QueueHandle = osMessageQueueNew(4, sizeof(UartMessage_t), NULL);
+    mqttQueueHandle = osMessageQueueNew(4, sizeof(MQTT_Message_t), NULL);
+    dht11QueueHandle = osMessageQueueNew(4, sizeof(DHT11_Data_t), NULL);
+    ledQueueHandle = osMessageQueueNew(3, sizeof(LED_Message_t), NULL);
     /* Create mutex */
     uart2MutexHandle = osMutexNew(NULL);
 
@@ -51,34 +60,40 @@ void Tasks_Init(void)
     keepAliveTimerHandle = osTimerNew(KeepAliveTimer_Callback, osTimerPeriodic, NULL, NULL);
 
     /* Create threads */
-//    const osThreadAttr_t defaultTask_attributes = {
-//            .name = "defaultTask",
-//            .stack_size = 32 * 4,
-//            .priority = (osPriority_t) osPriorityNormal,
-//    };
-//    defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+    const osThreadAttr_t defaultTask_attributes = {
+            .name = "vMonitorTask",
+            .stack_size = 256 * 4,
+            .priority = (osPriority_t) osPriorityLow,
+    };
+    MonitorTaskHandle = osThreadNew(vMonitorTask, NULL, &defaultTask_attributes);
 
     const osThreadAttr_t ESP8266Task_attributes = {
             .name = "ESP8266Task",
-            .stack_size = 384 * 4,
+            .stack_size = 280 * 4,
             .priority = (osPriority_t) osPriorityHigh,
     };
     ESP8266TaskHandle = osThreadNew(StartESP8266Task, NULL, &ESP8266Task_attributes);
 
     const osThreadAttr_t MQTTPublishTask_attributes = {
             .name = "MQTTPublishTask",
-            .stack_size = 512 * 4,
+            .stack_size = 320 * 4,
             .priority = (osPriority_t) osPriorityNormal,
     };
     MQTTPublishTaskHandle = osThreadNew(StartMQTTPublishTask, NULL, &MQTTPublishTask_attributes);
 
-//    const osThreadAttr_t DataProcessTask_attributes = {
-//            .name = "DataProcessTask",
-//            .stack_size = 128 * 4,
-//            .priority = (osPriority_t) osPriorityNormal,
-//    };
-//    DataProcessTaskHandle = osThreadNew(StartDataProcessTask, NULL, &DataProcessTask_attributes);
+    const osThreadAttr_t DataProcessTask_attributes = {
+            .name = "DataProcessTask",
+            .stack_size = 400 * 4,
+            .priority = (osPriority_t) osPriorityAboveNormal,
+    };
+    DataProcessTaskHandle = osThreadNew(StartDataProcessTask, NULL, &DataProcessTask_attributes);
 
+    const osThreadAttr_t vMonitorTask_attributes = {
+            .name = "OLED_Task",
+            .stack_size = 200 * 4,
+            .priority = (osPriority_t) osPriorityBelowNormal,
+    };
+    oledTaskHandle = osThreadNew(OLED_Task, NULL, &vMonitorTask_attributes);
 }
 
 /**
@@ -90,8 +105,17 @@ void StartDefaultTask(void *argument)
 {
     for(;;)
     {
-        // Toggle LED to indicate system is running
-        HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_PIN);
+        size_t freeHeap = xPortGetFreeHeapSize();
+        size_t minFreeHeap = xPortGetMinimumEverFreeHeapSize();
+        UBaseType_t uxHighWaterMark = 0;
+        my_printf("freeHeap:%d byte\r\n", freeHeap);
+        my_printf("minFreeHeap:%d byte\r\n", minFreeHeap);
+        uxHighWaterMark = uxTaskGetStackHighWaterMark(ESP8266TaskHandle);
+        my_printf("StartESP8266Task is %d\r\n", uxHighWaterMark);
+        uxHighWaterMark = uxTaskGetStackHighWaterMark(MQTTPublishTaskHandle);
+        my_printf("MQTTPublishTask is %d\r\n", uxHighWaterMark);
+        uxHighWaterMark = uxTaskGetStackHighWaterMark(DataProcessTaskHandle);
+        my_printf("DataProcessTask is %d\r\n", uxHighWaterMark);
         osDelay(1000);
     }
 }
@@ -106,15 +130,42 @@ void StartESP8266Task(void *argument)
     // Initialize ESP8266
     ESP8266_Init();
 
-    // Connect to WiFi
-    while(ESP8266_ConnectWiFi(WIFI_SSID, WIFI_PASSWORD) != ESP8266_OK)
+    // Connect to WiFi with exponential backoff
     {
-        osDelay(5000); // Retry every 5 seconds
+        uint32_t retry_delay = 2000;  // 初始 2 秒
+        uint8_t retry_count = 0;
+        const uint8_t max_retries = 10;
+
+        while(ESP8266_ConnectWiFi(WIFI_SSID, WIFI_PASSWORD) != ESP8266_OK)
+        {
+            retry_count++;
+            if(retry_count >= max_retries)
+            {
+                // 重试过多，重新初始化模块
+                ESP8266_Init();
+                retry_count = 0;
+                retry_delay = 2000;
+            }
+            osDelay(retry_delay);
+            if(retry_delay < 30000)
+                retry_delay = retry_delay * 3 / 2;  // 每次增加50%，最大30秒
+        }
     }
-    // Connect to MQTT broker
-    while(MQTT_Connect() != MQTT_OK)
+
+    // Connect to MQTT broker with retry limit
     {
-        osDelay(5000); // Retry every 5 seconds
+        uint8_t retry_count = 0;
+        while(MQTT_Connect() != MQTT_OK)
+        {
+            retry_count++;
+            if(retry_count >= 5)
+            {
+                // MQTT连接失败过多，回退重连WiFi
+                ESP8266_ConnectWiFi(WIFI_SSID, WIFI_PASSWORD);
+                retry_count = 0;
+            }
+            osDelay(3000);
+        }
     }
 
     // Subscribe to control topic
@@ -122,10 +173,26 @@ void StartESP8266Task(void *argument)
 
     // Start keep-alive timer
     osTimerStart(keepAliveTimerHandle, 60000); // 60 seconds
-
     for(;;)
     {
         // Check connections periodically
+        if(ESP8266_SendCommand("AT+CWJAP?", "+CWJAP:", 2000) == ESP8266_OK)
+        {
+            wifi_connected = 1;
+        }
+        else
+        {
+            wifi_connected = 0;
+        }
+        if(ESP8266_SendCommand("AT+CIPSTATUS", "STATUS:3", 2000) == ESP8266_OK)
+        {
+            mqtt_connected = 1;
+        }
+        else
+        {
+            mqtt_connected = 0;
+        }
+
         if(!wifi_connected)
         {
             ESP8266_ConnectWiFi(WIFI_SSID, WIFI_PASSWORD);
@@ -136,8 +203,7 @@ void StartESP8266Task(void *argument)
             MQTT_Connect();
             MQTT_Subscribe(MQTT_TOPIC_SUB);
         }
-
-        osDelay(10000); // Check every 10 seconds
+        osDelay(3000); // Check every 3 seconds (optimized)
     }
 }
 
@@ -146,7 +212,6 @@ void StartESP8266Task(void *argument)
   * @param  argument: Not used
   * @retval None
   */
-DHT11_Data_t sensor_data;
 void StartMQTTPublishTask(void *argument) {
     char payload[128];
     uint32_t counter = 0;
@@ -155,16 +220,18 @@ void StartMQTTPublishTask(void *argument) {
         if (mqtt_connected) {
             if (DHT11_Read_Raw_Data(&data) == DHT11_OK) {
                 // Create sensor data payload (example)
+                GPIO_PinState pin_state = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
                 snprintf(payload, sizeof(payload),
-                         "{\"timestamp\":%lu,\"temperature\":%d,\"humidity\":%d,\"counter\":%lu}",
-                         osKernelGetTickCount(), data.temperature_int, data.humidity_int, counter++);
+                         "{\"timestamp\":%lu,\"temperature\":%d,\"humidity\":%d,\"led_state\":%s,\"counter\":%lu}",
+                         osKernelGetTickCount(), data.temperature_int, data.humidity_int, pin_state==0?"ON":"OFF", counter++);
 
                 // Publish data
                 MQTT_Publish(MQTT_TOPIC_PUB, payload);
+                osMessageQueuePut(dht11QueueHandle, &data, 0, 0);
             }
         }
 
-        osDelay(30000); // Publish every 30 seconds
+        osDelay(5000); // Publish every 30 seconds
     }
 }
 
@@ -179,25 +246,102 @@ void StartDataProcessTask(void *argument)
 {
     for(;;)
     {
-        // Process UART data
-        //UART2_ProcessData();
-        //UART2_ProcessDMAData();
-
         // Process MQTT messages
         MQTT_Message_t mqtt_msg;
+        LED_Message_t led_state;
         if(osMessageQueueGet(mqttQueueHandle, &mqtt_msg, NULL, 100) == osOK)
         {
             // Handle received MQTT command
             if(strstr(mqtt_msg.payload + 10, "LED_ON") != NULL)
             {
                 HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, GPIO_PIN_RESET);
+                GPIO_PinState pin_state = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
+                led_state.pin_state=pin_state==0?"ON":"OFF";
+                osMessageQueuePut(ledQueueHandle, &led_state, 0, 0);
             }
             else if(strstr(mqtt_msg.payload + 10, "LED_OFF") != NULL)
             {
                 HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, GPIO_PIN_SET);
+                GPIO_PinState pin_state = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
+                led_state.pin_state=pin_state==1?"OFF":"ON";
+                osMessageQueuePut(ledQueueHandle, &led_state, 0, 0);
             }
         }
     }
+}
+
+
+void OLED_Task(void  * argument)
+{
+    uint32_t counter = 0;
+    char str[32];
+
+    /* 初始化OLED */
+    OLED_Init();
+    /* 清屏 */
+    OLED_Clear();
+    DHT11_Data_t sensor_data;
+    LED_Message_t led_state={"ON"};
+    /* 显示标题 */
+    snprintf(str, sizeof(str), "temperature:  ");
+    OLED_ShowString(0, 0, str, 16);
+    snprintf(str, sizeof(str), "humidity:  %RH");
+    OLED_ShowString(0, 2, str, 16);
+    /* 显示计数器 */
+    snprintf(str, sizeof(str), "Count: %lu", counter++);
+    OLED_ShowString(0, 4, str, 16);
+    /* 显示系统节拍 */
+    snprintf(str, sizeof(str), "Tick: %lu", osKernelGetTickCount());
+    OLED_ShowString(0, 6, str, 16);
+    for(;;)
+    {
+        if(osMessageQueueGet(dht11QueueHandle, &sensor_data, NULL, 100) == osOK ||
+        osMessageQueueGet(ledQueueHandle, &led_state, NULL, 100) == osOK)
+        {
+            /* 显示标题 */
+            snprintf(str, sizeof(str), "temperature: %d °C", sensor_data.temperature_int);
+            OLED_ShowString(0, 0, str, 16);
+            snprintf(str, sizeof(str), "humidity: %d %RH", sensor_data.humidity_int);
+            OLED_ShowString(0, 2, str, 16);
+            /* 显示计数器 */
+            snprintf(str, sizeof(str), "Count: %lu    %s ", counter++, led_state.pin_state);
+            OLED_ShowString(0, 4, str, 16);
+            /* 显示系统节拍 */
+            snprintf(str, sizeof(str), "Tick: %lu", osKernelGetTickCount());
+            OLED_ShowString(0, 6, str, 16);
+        }
+    }
+}
+
+void show_task_list(void)
+{
+    char buffer[128];
+    memset(buffer, 0, sizeof(buffer));
+    vTaskList(buffer);
+    size_t freeHeap = xPortGetFreeHeapSize();
+    size_t minFreeHeap = xPortGetMinimumEverFreeHeapSize();
+    my_printf("Name\t\tState\tPrio\tStack\tNum\tfreeHeap\tminFreeHeap\r\n");
+    my_printf("%s\t\t\t\t\t\t%d\t\t%d\r\n", buffer, freeHeap, minFreeHeap);
+//    my_printf("freeHeap:%d byte\r\n", freeHeap);
+//    my_printf("minFreeHeap:%d byte\r\n", minFreeHeap);
+}
+
+void vMonitorTask(void *pvParameters)
+{
+    while (1)
+    {
+        show_task_list();
+        vTaskDelay(pdMS_TO_TICKS(1000));  // 每 5 秒打印一次
+    }
+}
+
+
+void StackHogTask(void *arg)
+{
+    char waste[200];  // 占用栈空间
+    (void)waste;
+
+    StackHogTask(NULL);  // 递归调用自己制造溢出
 }
 
 /**
