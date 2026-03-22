@@ -15,13 +15,13 @@ extern "C" {
 
 /* Exported types ------------------------------------------------------------*/
 typedef struct {
-    char data[512];
+    char data[256];
     uint16_t length;
 } UartMessage_t;
 
 /* Exported constants --------------------------------------------------------*/
-#define UART_BUFFER_SIZE            1024
-#define UART_DMA_BUFFER_SIZE        512
+#define UART_BUFFER_SIZE            512
+#define UART_DMA_BUFFER_SIZE        256
 
 /* Exported macro ------------------------------------------------------------*/
 

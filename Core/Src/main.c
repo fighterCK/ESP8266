@@ -9,7 +9,8 @@ main.c - 主程序文件
 #include "task_monitor.h"
 #include "dht11.h"
 #include "tim1_us.h"
-#include "soft_i2c.h"
+
+#include "SEGGER_SYSVIEW.h"
 
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart1;
@@ -49,15 +50,13 @@ int main(void)
     MX_GPIO_Init();
 
     /* Initialize UART handler */
-    HAL_UART_MspDeInit2(&huart2);
+    //HAL_UART_MspDeInit2(&huart2);
     MX_USART1_UART_Init();
     MX_USART2_UART_Init();
     MX_DMA_Init();
     HAL_UART_MspInit2(&huart2);
     UART2_Init();
-    if (DHT11_Init() == DHT11_OK) {
-        // 初始化成功
-    }
+    SEGGER_SYSVIEW_Conf();
     /* Init scheduler */
     osKernelInitialize();
 

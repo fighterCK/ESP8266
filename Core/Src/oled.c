@@ -25,6 +25,42 @@
 #include "oledfont.h"
 #include "oled.h"
 #include "soft_i2c.h"
+
+static uint8_t g_oled_i2c_addr = 0x78;
+
+static void OLED_I2C_Delay(void)
+{
+    volatile uint16_t i;
+    for(i = 0; i < 60; i++)
+    {
+        __NOP();
+    }
+}
+
+static uint8_t OLED_I2C_WriteFrame(uint8_t addr, uint8_t control, uint8_t payload)
+{
+    I2C_Start();
+    I2C_Send_Byte(addr);
+    if(I2C_Wait_Ack())
+    {
+        I2C_Stop();
+        return 1;
+    }
+    I2C_Send_Byte(control);
+    if(I2C_Wait_Ack())
+    {
+        I2C_Stop();
+        return 1;
+    }
+    I2C_Send_Byte(payload);
+    if(I2C_Wait_Ack())
+    {
+        I2C_Stop();
+        return 1;
+    }
+    I2C_Stop();
+    return 0;
+}
 //OLEDµÄÏÔ´æ
 //´æ·Å¸ñÊ½ÈçÏÂ.
 //[0]0 1 2 3 ... 127
@@ -46,8 +82,11 @@ void IIC_Start()
 
     OLED_SCLK_Set() ;
     OLED_SDIN_Set();
+    OLED_I2C_Delay();
     OLED_SDIN_Clr();
+    OLED_I2C_Delay();
     OLED_SCLK_Clr();
+    OLED_I2C_Delay();
 }
 
 /**********************************************
@@ -55,10 +94,13 @@ void IIC_Start()
 **********************************************/
 void IIC_Stop()
 {
-    OLED_SCLK_Set() ;
-//	OLED_SCLK_Clr();
+    OLED_SCLK_Clr();
     OLED_SDIN_Clr();
+    OLED_I2C_Delay();
+    OLED_SCLK_Set() ;
+    OLED_I2C_Delay();
     OLED_SDIN_Set();
+    OLED_I2C_Delay();
 
 }
 
@@ -82,7 +124,9 @@ void IIC_Wait_Ack()
 	}
 */
     OLED_SCLK_Set() ;
+    OLED_I2C_Delay();
     OLED_SCLK_Clr();
+    OLED_I2C_Delay();
 }
 /**********************************************
 // IIC Write byte
@@ -94,6 +138,7 @@ void Write_IIC_Byte(unsigned char IIC_Byte)
     unsigned char m,da;
     da=IIC_Byte;
     OLED_SCLK_Clr();
+    OLED_I2C_Delay();
     for(i=0;i<8;i++)
     {
         m=da;
@@ -103,8 +148,11 @@ void Write_IIC_Byte(unsigned char IIC_Byte)
         {OLED_SDIN_Set();}
         else OLED_SDIN_Clr();
         da=da<<1;
+        OLED_I2C_Delay();
         OLED_SCLK_Set();
+        OLED_I2C_Delay();
         OLED_SCLK_Clr();
+        OLED_I2C_Delay();
     }
 
 
@@ -114,28 +162,38 @@ void Write_IIC_Byte(unsigned char IIC_Byte)
 **********************************************/
 void Write_IIC_Command(unsigned char IIC_Command)
 {
-    IIC_Start();
-    Write_IIC_Byte(0x78);            //Slave address,SA0=0
-    IIC_Wait_Ack();
-    Write_IIC_Byte(0x00);			//write command
-    IIC_Wait_Ack();
-    Write_IIC_Byte(IIC_Command);
-    IIC_Wait_Ack();
-    IIC_Stop();
+    if(OLED_I2C_WriteFrame(g_oled_i2c_addr, 0x00, IIC_Command) != 0)
+    {
+        // Try alternate SSD1306 address (0x3D << 1 = 0x7A)
+        if(g_oled_i2c_addr == 0x78)
+        {
+            g_oled_i2c_addr = 0x7A;
+        }
+        else
+        {
+            g_oled_i2c_addr = 0x78;
+        }
+        (void)OLED_I2C_WriteFrame(g_oled_i2c_addr, 0x00, IIC_Command);
+    }
 }
 /**********************************************
 // IIC Write Data
 **********************************************/
 void Write_IIC_Data(unsigned char IIC_Data)
 {
-    IIC_Start();
-    Write_IIC_Byte(0x78);			//D/C#=0; R/W#=0
-    IIC_Wait_Ack();
-    Write_IIC_Byte(0x40);			//write data
-    IIC_Wait_Ack();
-    Write_IIC_Byte(IIC_Data);
-    IIC_Wait_Ack();
-    IIC_Stop();
+    if(OLED_I2C_WriteFrame(g_oled_i2c_addr, 0x40, IIC_Data) != 0)
+    {
+        // Keep behavior resilient if module uses alternate address.
+        if(g_oled_i2c_addr == 0x78)
+        {
+            g_oled_i2c_addr = 0x7A;
+        }
+        else
+        {
+            g_oled_i2c_addr = 0x78;
+        }
+        (void)OLED_I2C_WriteFrame(g_oled_i2c_addr, 0x40, IIC_Data);
+    }
 }
 void OLED_WR_Byte(unsigned dat,unsigned cmd)
 {
@@ -341,29 +399,8 @@ void OLED_DrawBMP(unsigned char x0, unsigned char y0,unsigned char x1, unsigned 
 //³õÊ¼»¯SSD1306
 void OLED_Init(void)
 {
-
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-    /* 使能GPIOB时钟 */
-    __HAL_RCC_GPIOB_CLK_ENABLE();
-
-    /* 配置SCL引脚为推挽输出 */
-    GPIO_InitStruct.Pin = I2C_SCL_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(I2C_SCL_GPIO_Port, &GPIO_InitStruct);
-
-    /* 配置SDA引脚为推挽输出（初始状态） */
-    GPIO_InitStruct.Pin = I2C_SDA_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(I2C_SDA_GPIO_Port, &GPIO_InitStruct);
-
-    /* 初始状态：SCL和SDA都为高电平 */
-    SCL_H();
-    SDA_H();
+    Soft_I2C_Init();
+    g_oled_i2c_addr = 0x78;
 
 
     osDelay(800);
@@ -402,6 +439,9 @@ void OLED_Init(void)
 
     OLED_WR_Byte(0xAF,OLED_CMD);//--turn on oled panel
 
+    // Power-on self-test pattern: full on for a short period, then clear.
+    fill_picture(0xFF);
+    osDelay(200);
     OLED_Clear();
 }
 

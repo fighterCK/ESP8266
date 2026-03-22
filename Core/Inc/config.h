@@ -14,13 +14,13 @@ system_config.h - 系统配置文件
 #define MQTT_BROKER                 "192.168.1.49"
 #define MQTT_PORT                   "1883"
 #define MQTT_CLIENT_ID              "STM32_Client"
-#define MQTT_USERNAME               "ck"
-#define MQTT_PASSWORD               "123456"
+#define MQTT_USERNAME               "admin"
+#define MQTT_PASSWORD               "public"
 #define MQTT_TOPIC_PUB              "stm32/sensor/data"
 #define MQTT_TOPIC_SUB              "stm32/control/cmd"
 
 #define MQTT_KEEP_ALIVE             60
-#define MQTT_BUFFER_SIZE            512
+#define MQTT_BUFFER_SIZE            256
 
 /* System Settings */
 #define SYSTEM_CLOCK_FREQ           72000000  // 72MHz

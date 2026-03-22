@@ -62,36 +62,36 @@ void Tasks_Init(void)
     /* Create threads */
     const osThreadAttr_t defaultTask_attributes = {
             .name = "vMonitorTask",
-            .stack_size = 320 * 4,
-            .priority = (osPriority_t) osPriorityNormal,
+            .stack_size = 256 * 4,
+            .priority = (osPriority_t) osPriorityLow,
     };
     MonitorTaskHandle = osThreadNew(vMonitorTask, NULL, &defaultTask_attributes);
 
     const osThreadAttr_t ESP8266Task_attributes = {
             .name = "ESP8266Task",
-            .stack_size = 352 * 4,
+            .stack_size = 280 * 4,
             .priority = (osPriority_t) osPriorityHigh,
     };
     ESP8266TaskHandle = osThreadNew(StartESP8266Task, NULL, &ESP8266Task_attributes);
 
     const osThreadAttr_t MQTTPublishTask_attributes = {
             .name = "MQTTPublishTask",
-            .stack_size = 384 * 4,
+            .stack_size = 320 * 4,
             .priority = (osPriority_t) osPriorityNormal,
     };
     MQTTPublishTaskHandle = osThreadNew(StartMQTTPublishTask, NULL, &MQTTPublishTask_attributes);
-
-    const osThreadAttr_t DataProcessTask_attributes = {
-            .name = "DataProcessTask",
-            .stack_size = 256 * 4,
-            .priority = (osPriority_t) osPriorityNormal,
-    };
-    DataProcessTaskHandle = osThreadNew(StartDataProcessTask, NULL, &DataProcessTask_attributes);
+//
+//    const osThreadAttr_t DataProcessTask_attributes = {
+//            .name = "DataProcessTask",
+//            .stack_size = 200 * 4,
+//            .priority = (osPriority_t) osPriorityAboveNormal,
+//    };
+//    DataProcessTaskHandle = osThreadNew(StartDataProcessTask, NULL, &DataProcessTask_attributes);
 
     const osThreadAttr_t vMonitorTask_attributes = {
             .name = "OLED_Task",
-            .stack_size = 256 * 4,
-            .priority = (osPriority_t) osPriorityNormal,
+            .stack_size = 200 * 4,
+            .priority = (osPriority_t) osPriorityBelowNormal,
     };
     oledTaskHandle = osThreadNew(OLED_Task, NULL, &vMonitorTask_attributes);
 }
@@ -130,15 +130,42 @@ void StartESP8266Task(void *argument)
     // Initialize ESP8266
     ESP8266_Init();
 
-    // Connect to WiFi
-    while(ESP8266_ConnectWiFi(WIFI_SSID, WIFI_PASSWORD) != ESP8266_OK)
+    // Connect to WiFi with exponential backoff
     {
-        osDelay(5000); // Retry every 5 seconds
+        uint32_t retry_delay = 2000;  // 初始 2 秒
+        uint8_t retry_count = 0;
+        const uint8_t max_retries = 10;
+
+        while(ESP8266_ConnectWiFi(WIFI_SSID, WIFI_PASSWORD) != ESP8266_OK)
+        {
+            retry_count++;
+            if(retry_count >= max_retries)
+            {
+                // 重试过多，重新初始化模块
+                ESP8266_Init();
+                retry_count = 0;
+                retry_delay = 2000;
+            }
+            osDelay(retry_delay);
+            if(retry_delay < 30000)
+                retry_delay = retry_delay * 3 / 2;  // 每次增加50%，最大30秒
+        }
     }
-    // Connect to MQTT broker
-    while(MQTT_Connect() != MQTT_OK)
+
+    // Connect to MQTT broker with retry limit
     {
-        osDelay(5000); // Retry every 5 seconds
+        uint8_t retry_count = 0;
+        while(MQTT_Connect() != MQTT_OK)
+        {
+            retry_count++;
+            if(retry_count >= 5)
+            {
+                // MQTT连接失败过多，回退重连WiFi
+                ESP8266_ConnectWiFi(WIFI_SSID, WIFI_PASSWORD);
+                retry_count = 0;
+            }
+            osDelay(3000);
+        }
     }
 
     // Subscribe to control topic
@@ -149,7 +176,7 @@ void StartESP8266Task(void *argument)
     for(;;)
     {
         // Check connections periodically
-        if(ESP8266_SendCommand("AT+CWJAP?", "+CWJAP:", 5000) == ESP8266_OK)
+        if(ESP8266_SendCommand("AT+CWJAP?", "+CWJAP:", 2000) == ESP8266_OK)
         {
             wifi_connected = 1;
         }
@@ -157,7 +184,7 @@ void StartESP8266Task(void *argument)
         {
             wifi_connected = 0;
         }
-        if(ESP8266_SendCommand("AT+CIPSTATUS", "STATUS:3", 5000) == ESP8266_OK)
+        if(ESP8266_SendCommand("AT+CIPSTATUS", "STATUS:3", 2000) == ESP8266_OK)
         {
             mqtt_connected = 1;
         }
@@ -176,7 +203,7 @@ void StartESP8266Task(void *argument)
             MQTT_Connect();
             MQTT_Subscribe(MQTT_TOPIC_SUB);
         }
-        osDelay(10000); // Check every 10 seconds
+        osDelay(3000); // Check every 3 seconds (optimized)
     }
 }
 
@@ -220,10 +247,6 @@ void StartDataProcessTask(void *argument)
     UBaseType_t uxHighWaterMark = 0;
     for(;;)
     {
-        // Process UART data
-        //UART2_ProcessData();
-        //UART2_ProcessDMAData();
-
         // Process MQTT messages
         MQTT_Message_t mqtt_msg;
         LED_Message_t led_state;
@@ -293,7 +316,7 @@ void OLED_Task(void  * argument)
 
 void show_task_list(void)
 {
-    char buffer[256];
+    char buffer[128];
     memset(buffer, 0, sizeof(buffer));
     vTaskList(buffer);
     size_t freeHeap = xPortGetFreeHeapSize();

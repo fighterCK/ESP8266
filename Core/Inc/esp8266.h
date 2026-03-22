@@ -25,12 +25,12 @@ typedef enum {
 } ESP8266_StatusTypeDef;
 
 typedef struct {
-    char data[512];
+    char data[256];
     uint16_t length;
 } ESP8266_Message_t;
 
 /* Exported constants --------------------------------------------------------*/
-#define ESP8266_BUFFER_SIZE         1024
+#define ESP8266_BUFFER_SIZE         512
 #define ESP8266_TIMEOUT_DEFAULT     5000
 
 /* WiFi配置 */
