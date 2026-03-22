@@ -233,3 +233,12 @@ void DMA1_Channel6_IRQHandler(void)
 {
     HAL_DMA_IRQHandler(&hdma_usart2_rx);
 }
+
+/**
+  * @brief  DMA1 Channel7中断处理函数 (USART2 TX)
+  */
+extern DMA_HandleTypeDef hdma_usart2_tx;
+void DMA1_Channel7_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(&hdma_usart2_tx);
+}

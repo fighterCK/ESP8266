@@ -80,13 +80,13 @@ void Tasks_Init(void)
             .priority = (osPriority_t) osPriorityNormal,
     };
     MQTTPublishTaskHandle = osThreadNew(StartMQTTPublishTask, NULL, &MQTTPublishTask_attributes);
-//
-//    const osThreadAttr_t DataProcessTask_attributes = {
-//            .name = "DataProcessTask",
-//            .stack_size = 200 * 4,
-//            .priority = (osPriority_t) osPriorityAboveNormal,
-//    };
-//    DataProcessTaskHandle = osThreadNew(StartDataProcessTask, NULL, &DataProcessTask_attributes);
+
+    const osThreadAttr_t DataProcessTask_attributes = {
+            .name = "DataProcessTask",
+            .stack_size = 400 * 4,
+            .priority = (osPriority_t) osPriorityAboveNormal,
+    };
+    DataProcessTaskHandle = osThreadNew(StartDataProcessTask, NULL, &DataProcessTask_attributes);
 
     const osThreadAttr_t vMonitorTask_attributes = {
             .name = "OLED_Task",
@@ -244,7 +244,6 @@ void StartMQTTPublishTask(void *argument) {
   */
 void StartDataProcessTask(void *argument)
 {
-    UBaseType_t uxHighWaterMark = 0;
     for(;;)
     {
         // Process MQTT messages

@@ -15,6 +15,8 @@ uint8_t uart2_dma_buffer[UART_DMA_BUFFER_SIZE];
 uint8_t uart2_process_buffer[UART_DMA_BUFFER_SIZE];
 volatile uint16_t uart2_last_dma_size = 0;
 volatile uint8_t uart2_rx_complete_flag = 0;
+static volatile uint8_t uart2_tx_busy = 0;
+static uint8_t uart2_tx_buffer[UART_DMA_BUFFER_SIZE];
 
 /* Private function prototypes -----------------------------------------------*/
 static void UART2_ParseReceivedData(uint8_t* data, uint16_t length);
@@ -56,8 +58,33 @@ void UART2_SendString(const char* str)
 {
     if(osMutexAcquire(uart2MutexHandle, osWaitForever) == osOK)
     {
-        HAL_UART_Transmit(&huart2, (uint8_t*)str, strlen(str), HAL_MAX_DELAY);
+        /* Wait for previous DMA TX to finish */
+        uint32_t timeout = 1000;
+        while(uart2_tx_busy && timeout--)
+        {
+            osDelay(1);
+        }
+
+        uint16_t len = strlen(str);
+        if(len > UART_DMA_BUFFER_SIZE)
+            len = UART_DMA_BUFFER_SIZE;
+
+        memcpy(uart2_tx_buffer, str, len);
+        uart2_tx_busy = 1;
+        HAL_UART_Transmit_DMA(&huart2, uart2_tx_buffer, len);
+
         osMutexRelease(uart2MutexHandle);
+    }
+}
+
+/**
+  * @brief  HAL DMA发送完成回调
+  */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if(huart->Instance == USART2)
+    {
+        uart2_tx_busy = 0;
     }
 }
 
@@ -120,41 +147,42 @@ void HAL_UART_IRQHandler_Custom(UART_HandleTypeDef *huart)
   */
 static void UART2_ParseReceivedData(uint8_t* data, uint16_t length)
 {
+    if(length == 0)
+        return;
 
-    // 添加字符串结束符
-    if(length < UART_DMA_BUFFER_SIZE)
+    // 截断保护 + 添加结束符
+    if(length >= UART_DMA_BUFFER_SIZE)
+        length = UART_DMA_BUFFER_SIZE - 1;
+    data[length] = '\0';
+
+    // 检查是否为+IPD数据（MQTT收到的报文）
+    char *ipd = strstr((char*)data, "+IPD,");
+    if(ipd != NULL)
     {
-        data[length] = '\0';
-    }
-
-    // 处理ESP8266响应
-    ESP8266_ProcessResponse((char*)data);
-    // 将数据放入队列供其他任务处理
-    UartMessage_t uart_msg;
-    if(length < sizeof(uart_msg.data))
-    {
-        memcpy(uart_msg.data, data, length);
-        uart_msg.data[length] = '\0';
-        uart_msg.length = length;
-
-        // 尝试将消息放入队列（非阻塞）
-        char * p = strchr(uart_msg.data, ':');
-        if (strstr(uart_msg.data, "+IPD,") != NULL && p != NULL)
+        char *colon = strchr(ipd, ':');
+        if(colon != NULL)
         {
             MQTT_Message_t mqtt_msg;
-            int len = length -(p - uart_msg.data + 1);
-            memcpy(mqtt_msg.payload, p + 1, len);
-            mqtt_msg.payload[len] = '\0';
+            uint16_t payload_len = length - (uint16_t)(colon + 1 - (char*)data);
+            if(payload_len >= sizeof(mqtt_msg.payload))
+                payload_len = sizeof(mqtt_msg.payload) - 1;
+            memcpy(mqtt_msg.payload, colon + 1, payload_len);
+            mqtt_msg.payload[payload_len] = '\0';
             osMessageQueuePut(mqttQueueHandle, &mqtt_msg, 0, 0);
+            uart2_rx_complete_flag = 1;
+            return;
         }
-        else
-        {
-            osMessageQueuePut(uart2QueueHandle, &uart_msg, 0, 0);
-        }
-
     }
 
-    // 设置接收完成标志
+    // 普通AT响应放入uart2队列
+    if(length < sizeof(((UartMessage_t*)0)->data))
+    {
+        UartMessage_t uart_msg;
+        memcpy(uart_msg.data, data, length + 1);  // 含'\0'
+        uart_msg.length = length;
+        osMessageQueuePut(uart2QueueHandle, &uart_msg, 0, 0);
+    }
+
     uart2_rx_complete_flag = 1;
 }
 
