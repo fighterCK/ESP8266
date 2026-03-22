@@ -298,7 +298,7 @@ void OLED_Task(void  * argument)
             need_refresh = 0;
             counter++;
 
-            snprintf(str, sizeof(str), "Temp: %d C      ", sensor_data.temperature_int);
+            snprintf(str, sizeof(str), "Temp: %d \x7F""C     ", sensor_data.temperature_int);
             OLED_ShowString(0, 0, str, 16);
 
             snprintf(str, sizeof(str), "Humi: %d %%RH    ", sensor_data.humidity_int);
