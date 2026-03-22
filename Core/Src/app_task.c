@@ -278,38 +278,40 @@ void OLED_Task(void  * argument)
 
     /* 初始化OLED */
     OLED_Init();
-    /* 清屏 */
     OLED_Clear();
-    DHT11_Data_t sensor_data;
-    LED_Message_t led_state={"ON"};
-    /* 显示标题 */
-    snprintf(str, sizeof(str), "temperature:  ");
-    OLED_ShowString(0, 0, str, 16);
-    snprintf(str, sizeof(str), "humidity:  %RH");
-    OLED_ShowString(0, 2, str, 16);
-    /* 显示计数器 */
-    snprintf(str, sizeof(str), "Count: %lu", counter++);
-    OLED_ShowString(0, 4, str, 16);
-    /* 显示系统节拍 */
-    snprintf(str, sizeof(str), "Tick: %lu", osKernelGetTickCount());
-    OLED_ShowString(0, 6, str, 16);
+
+    DHT11_Data_t sensor_data = {0};
+    LED_Message_t led_state = {"ON"};
+    uint8_t need_refresh = 1;
+
     for(;;)
     {
-        if(osMessageQueueGet(dht11QueueHandle, &sensor_data, NULL, 100) == osOK ||
-        osMessageQueueGet(ledQueueHandle, &led_state, NULL, 100) == osOK)
+        /* 非阻塞轮询两个队列，互不干扰 */
+        if(osMessageQueueGet(dht11QueueHandle, &sensor_data, NULL, 0) == osOK)
+            need_refresh = 1;
+
+        if(osMessageQueueGet(ledQueueHandle, &led_state, NULL, 0) == osOK)
+            need_refresh = 1;
+
+        if(need_refresh)
         {
-            /* 显示标题 */
-            snprintf(str, sizeof(str), "temperature: %d °C", sensor_data.temperature_int);
+            need_refresh = 0;
+            counter++;
+
+            snprintf(str, sizeof(str), "Temp: %d C      ", sensor_data.temperature_int);
             OLED_ShowString(0, 0, str, 16);
-            snprintf(str, sizeof(str), "humidity: %d %RH", sensor_data.humidity_int);
+
+            snprintf(str, sizeof(str), "Humi: %d %%RH    ", sensor_data.humidity_int);
             OLED_ShowString(0, 2, str, 16);
-            /* 显示计数器 */
-            snprintf(str, sizeof(str), "Count: %lu    %s ", counter++, led_state.pin_state);
+
+            snprintf(str, sizeof(str), "Cnt:%-5lu  %s   ", counter, led_state.pin_state);
             OLED_ShowString(0, 4, str, 16);
-            /* 显示系统节拍 */
+
             snprintf(str, sizeof(str), "Tick: %lu", osKernelGetTickCount());
             OLED_ShowString(0, 6, str, 16);
         }
+
+        osDelay(100);
     }
 }
 
